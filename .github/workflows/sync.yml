@@ -36,7 +36,7 @@ jobs:
             echo "Processing branch: $branch"
             if git show-ref --verify --quiet "refs/heads/$branch"; then
               git checkout "$branch"
-              git pull --no-rebase upstream "$branch"
+              git pull --no-rebase --allow-unrelated-histories upstream "$branch" || echo "Failed to pull branch $branch"
             else
               git checkout -b "$branch" "upstream/$branch"
             fi
@@ -47,7 +47,6 @@ jobs:
         run: |
           for tag in $(git ls-remote --tags upstream | awk '{print $2}' | sed 's/refs\/tags\///'); do
             echo "Processing tag: $tag"
-            # Check if the tag exists locally
             if git show-ref --tags | grep -q "refs/tags/$tag"; then
               git tag -d "$tag" || echo "Failed to delete tag $tag"
             fi

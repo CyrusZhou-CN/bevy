@@ -37,6 +37,10 @@ jobs:
             if git show-ref --verify --quiet "refs/heads/$branch"; then
               git checkout "$branch"
               git pull --no-rebase --allow-unrelated-histories upstream "$branch" || echo "Failed to pull branch $branch"
+              if [ -n "$(git ls-files -u)" ]; then
+                echo "Conflicts detected in branch $branch. Please resolve them manually."
+                exit 1
+              fi
             else
               git checkout -b "$branch" "upstream/$branch"
             fi

@@ -28,7 +28,7 @@ jobs:
 
       - name: Fetch all branches and tags from upstream
         run: |
-          git fetch upstream
+          git fetch upstream --tags
 
       - name: Sync branches
         run: |
@@ -49,10 +49,15 @@ jobs:
             echo "Processing tag: $tag"
             if git show-ref --tags | grep -q "refs/tags/$tag"; then
               git tag -d "$tag" || echo "Failed to delete tag $tag"
+              git fetch upstream tag "$tag"
+              git tag "$tag" "upstream/$tag"
+              git push origin :refs/tags/$tag || echo "Failed to delete tag from remote $tag"
+              git push origin "$tag" || echo "Failed to push tag $tag"
+            else
+              git fetch upstream tag "$tag"
+              git tag "$tag" "upstream/$tag"
+              git push origin "$tag" || echo "Failed to push tag $tag"
             fi
-            git fetch upstream tag "$tag"
-            git tag "$tag" "upstream/$tag"
-            git push origin "$tag" || echo "Failed to push tag $tag"
           done
 
       - name: Cleanup

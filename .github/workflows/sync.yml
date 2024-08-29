@@ -1,4 +1,5 @@
 name: Sync All Branches
+name: Sync Repos
 
 on:
   schedule:
@@ -10,22 +11,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout target repository
+      - name: Checkout source repository
         uses: actions/checkout@v3
         with:
           repository: CyrusZhou-CN/bevy
-          token: ${{ secrets.GH_TOKEN }}  # 使用 GitHub Token 进行认证
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+          git config pull.rebase false  # 配置为 merge 模式
 
       - name: Add upstream remote
         run: |
           git remote add upstream https://github.com/bevyengine/bevy.git
 
-      - name: Fetch all branches from upstream
+      - name: Fetch all branches and tags from upstream
         run: |
           git fetch upstream
 
@@ -35,17 +37,28 @@ jobs:
             echo "Processing branch: $branch"
             if git show-ref --verify --quiet "refs/heads/$branch"; then
               git checkout "$branch"
-              git pull --rebase upstream "$branch"  # 拉取最新的上游分支内容,使用 rebase 策略
+              git pull --no-rebase upstream "$branch"
             else
-              git checkout -b "$branch" "upstream/$branch"  # 创建新分支并切换到该分支
+              git checkout -b "$branch" "upstream/$branch"
             fi
-            git push origin "$branch"  # 推送到你的仓库
+            git push origin "$branch"
           done
 
-      - name: Push tags
+      - name: Sync tags
         run: |
-          git fetch --tags
-          git push --tags
+          for tag in $(git ls-remote --tags upstream | awk '{print $2}' | sed 's/refs\/tags\///'); do
+            echo "Processing tag: $tag"
+            if git show-ref --tags | grep -q "refs/tags/$tag"; then
+              git fetch upstream tag "$tag"
+              git tag -d "$tag"
+              git fetch upstream --tags
+              git tag "$tag" "upstream/$tag"
+            else
+              git fetch upstream tag "$tag"
+              git tag "$tag" "upstream/$tag"
+            fi
+            git push origin "$tag"
+          done
 
       - name: Cleanup
         run: |

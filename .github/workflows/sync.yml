@@ -40,23 +40,20 @@ jobs:
             else
               git checkout -b "$branch" "upstream/$branch"
             fi
-            git push origin "$branch"
+            git push origin "$branch" || echo "Failed to push branch $branch"
           done
 
       - name: Sync tags
         run: |
           for tag in $(git ls-remote --tags upstream | awk '{print $2}' | sed 's/refs\/tags\///'); do
             echo "Processing tag: $tag"
+            # Check if the tag exists locally
             if git show-ref --tags | grep -q "refs/tags/$tag"; then
-              git fetch upstream tag "$tag"
-              git tag -d "$tag"
-              git fetch upstream --tags
-              git tag "$tag" "upstream/$tag"
-            else
-              git fetch upstream tag "$tag"
-              git tag "$tag" "upstream/$tag"
+              git tag -d "$tag" || echo "Failed to delete tag $tag"
             fi
-            git push origin "$tag"
+            git fetch upstream tag "$tag"
+            git tag "$tag" "upstream/$tag"
+            git push origin "$tag" || echo "Failed to push tag $tag"
           done
 
       - name: Cleanup

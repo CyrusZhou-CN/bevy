@@ -10,7 +10,7 @@ env:
 
 jobs:
   build-for-iOS:
-    if: github.repository == 'bevyengine/bevy'
+    if: github.repository == 'CyrusZhou-CN/bevy'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -38,7 +38,7 @@ jobs:
             -F "custom_id=$GITHUB_RUN_ID"
 
   build-for-Android:
-    if: github.repository == 'bevyengine/bevy'
+    if: github.repository == 'CyrusZhou-CN/bevy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -66,7 +66,7 @@ jobs:
             -F "custom_id=$GITHUB_RUN_ID"
 
   nonce:
-    if: github.repository == 'bevyengine/bevy'
+    if: github.repository == 'CyrusZhou-CN/bevy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -76,7 +76,7 @@ jobs:
       run: echo "result=${{ github.run_id }}-$(date +%s)" >> $GITHUB_OUTPUT
 
   run:
-    if: github.repository == 'bevyengine/bevy'
+    if: github.repository == 'CyrusZhou-CN/bevy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [nonce, build-for-iOS, build-for-Android]
@@ -125,7 +125,7 @@ jobs:
           path: .github/start-mobile-example/*.png
 
   check-result:
-    if: github.repository == 'bevyengine/bevy'
+    if: github.repository == 'CyrusZhou-CN/bevy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [run]

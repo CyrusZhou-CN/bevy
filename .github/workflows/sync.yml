@@ -38,7 +38,7 @@ jobs:
             echo "Processing branch: $branch"
             if git show-ref --verify --quiet "refs/heads/$branch"; then
               git checkout "$branch"
-              git merge --ff-only "upstream/$branch" || echo "Failed to merge branch $branch"
+              git merge --no-ff "upstream/$branch" || echo "Failed to merge branch $branch"
             else
               git checkout -b "$branch" "upstream/$branch"
             fi

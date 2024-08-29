@@ -43,11 +43,17 @@ jobs:
             git push origin "$branch" || echo "Failed to push branch $branch"
           done
 
-      - name: Push tags
+      - name: Push tags to own repo
         run: |
-          git fetch --all --tags
-          git push --all
-          git push --tags
+          git fetch --tags
+          git tag -l | while read tag; do
+            echo "Processing tag: $tag"
+            if ! git ls-remote --tags origin | grep -q "refs/tags/$tag"; then
+              git push origin "$tag" || echo "Failed to push tag $tag"
+            else
+              echo "Tag $tag already exists on origin, skipping."
+            fi
+          done
 
       - name: Cleanup
         run: |

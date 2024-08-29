@@ -26,9 +26,9 @@ jobs:
         run: |
           git remote add upstream https://github.com/bevyengine/bevy.git
 
-      - name: Fetch all branches and tags from upstream
+      - name: Fetch all branches from upstream
         run: |
-          git fetch upstream --tags
+          git fetch upstream
 
       - name: Sync branches
         run: |
@@ -43,21 +43,10 @@ jobs:
             git push origin "$branch" || echo "Failed to push branch $branch"
           done
 
-      - name: Sync tags
+      - name: Push tags
         run: |
-          for tag in $(git ls-remote --tags upstream | awk '{print $2}' | sed 's/refs\/tags\///'); do
-            echo "Processing tag: $tag"
-            # Check if the tag already exists locally
-            if git show-ref --tags | grep -q "refs/tags/$tag"; then
-              git tag -d "$tag" || echo "Failed to delete local tag $tag"
-            fi
-            # Delete remote tag if it exists
-            git push origin :refs/tags/$tag || echo "Failed to delete remote tag $tag"
-            # Fetch the tag from upstream and create it
-            git fetch upstream tag "$tag"
-            git tag "$tag" "upstream/$tag"
-            git push origin "$tag" || echo "Failed to push tag $tag"
-          done
+          git fetch --tags
+          git push --tags
 
       - name: Cleanup
         run: |

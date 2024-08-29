@@ -45,7 +45,8 @@ jobs:
 
       - name: Push tags
         run: |
-          git fetch --tags
+          git fetch --all --tags
+          git push --all
           git push --tags
 
       - name: Cleanup

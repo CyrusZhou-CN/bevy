@@ -1,5 +1,4 @@
 name: Sync All Branches
-name: Sync Repos
 
 on:
   schedule:

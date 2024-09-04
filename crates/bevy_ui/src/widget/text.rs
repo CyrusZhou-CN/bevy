@@ -152,7 +152,9 @@ fn create_text_measure(
 ///     is only able to detect that a `Text` component has changed and will regenerate the `Measure` on
 ///     color changes. This can be expensive, particularly for large blocks of text, and the [`bypass_change_detection`](bevy_ecs::change_detection::DetectChangesMut::bypass_change_detection)
 ///     method should be called when only changing the `Text`'s colors.
+#[allow(clippy::too_many_arguments)]
 pub fn measure_text_system(
+    mut scale_factors_buffer: Local<EntityHashMap<f32>>,
     mut last_scale_factors: Local<EntityHashMap<f32>>,
     fonts: Res<Assets<Font>>,
     camera_query: Query<(Entity, &Camera)>,
@@ -171,14 +173,14 @@ pub fn measure_text_system(
     >,
     mut text_pipeline: ResMut<TextPipeline>,
 ) {
-    let mut scale_factors: EntityHashMap<f32> = EntityHashMap::default();
+    scale_factors_buffer.clear();
 
     for (entity, text, content_size, text_flags, camera, mut buffer) in &mut text_query {
         let Some(camera_entity) = camera.map(TargetCamera::entity).or(default_ui_camera.get())
         else {
             continue;
         };
-        let scale_factor = match scale_factors.entry(camera_entity) {
+        let scale_factor = match scale_factors_buffer.entry(camera_entity) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => *entry.insert(
                 camera_query
@@ -208,7 +210,7 @@ pub fn measure_text_system(
             );
         }
     }
-    *last_scale_factors = scale_factors;
+    std::mem::swap(&mut *last_scale_factors, &mut *scale_factors_buffer);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -224,7 +226,7 @@ fn queue_text(
     text: &Text,
     node: Ref<Node>,
     mut text_flags: Mut<TextFlags>,
-    mut text_layout_info: Mut<TextLayoutInfo>,
+    text_layout_info: Mut<TextLayoutInfo>,
     buffer: &mut CosmicBuffer,
 ) {
     // Skip the text node if it is waiting for a new measure func
@@ -240,7 +242,9 @@ fn queue_text(
             )
         };
 
+        let text_layout_info = text_layout_info.into_inner();
         match text_pipeline.queue_text(
+            text_layout_info,
             fonts,
             &text.sections,
             scale_factor.into(),
@@ -260,10 +264,11 @@ fn queue_text(
             Err(e @ (TextError::FailedToAddGlyph(_) | TextError::FailedToGetGlyphImage(_))) => {
                 panic!("Fatal error when processing text: {e}.");
             }
-            Ok(mut info) => {
-                info.size.x = scale_value(info.size.x, inverse_scale_factor);
-                info.size.y = scale_value(info.size.y, inverse_scale_factor);
-                *text_layout_info = info;
+            Ok(()) => {
+                text_layout_info.size.x =
+                    scale_value(text_layout_info.size.x, inverse_scale_factor);
+                text_layout_info.size.y =
+                    scale_value(text_layout_info.size.y, inverse_scale_factor);
                 text_flags.needs_recompute = false;
             }
         }
@@ -281,6 +286,7 @@ fn queue_text(
 #[allow(clippy::too_many_arguments)]
 pub fn text_system(
     mut textures: ResMut<Assets<Image>>,
+    mut scale_factors_buffer: Local<EntityHashMap<f32>>,
     mut last_scale_factors: Local<EntityHashMap<f32>>,
     fonts: Res<Assets<Font>>,
     camera_query: Query<(Entity, &Camera)>,
@@ -298,14 +304,14 @@ pub fn text_system(
         &mut CosmicBuffer,
     )>,
 ) {
-    let mut scale_factors: EntityHashMap<f32> = EntityHashMap::default();
+    scale_factors_buffer.clear();
 
     for (node, text, text_layout_info, text_flags, camera, mut buffer) in &mut text_query {
         let Some(camera_entity) = camera.map(TargetCamera::entity).or(default_ui_camera.get())
         else {
             continue;
         };
-        let scale_factor = match scale_factors.entry(camera_entity) {
+        let scale_factor = match scale_factors_buffer.entry(camera_entity) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => *entry.insert(
                 camera_query
@@ -338,5 +344,5 @@ pub fn text_system(
             );
         }
     }
-    *last_scale_factors = scale_factors;
+    std::mem::swap(&mut *last_scale_factors, &mut *scale_factors_buffer);
 }

@@ -497,6 +497,7 @@ impl AssetServer {
 
         let path = path.into_owned();
         let path_clone = path.clone();
+        #[allow(clippy::manual_inspect)]
         let (mut meta, loader, mut reader) = self
             .get_meta_loader_and_reader(&path_clone, asset_type_id)
             .await

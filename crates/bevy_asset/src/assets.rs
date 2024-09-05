@@ -193,6 +193,7 @@ impl<A: Asset> DenseAssetStorage<A> {
             Entry::None => return None,
             Entry::Some { value, generation } => {
                 if *generation == index.generation {
+                    #[allow(clippy::manual_inspect)]
                     value.take().map(|value| {
                         self.len -= 1;
                         value

@@ -1,5 +1,5 @@
-// FIXME(3492): remove once docs are ready
-#![allow(missing_docs)]
+// FIXME(15321): solve CI failures, then replace with `#![expect()]`.
+#![allow(missing_docs, reason = "Not all docs are written yet, see #3492.")]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![doc(
     html_logo_url = "https://bevyengine.org/assets/icon.png",
@@ -21,6 +21,7 @@ pub mod widget;
 pub mod picking_backend;
 
 use bevy_derive::{Deref, DerefMut};
+use bevy_reflect::std_traits::ReflectDefault;
 use bevy_reflect::Reflect;
 #[cfg(feature = "bevy_text")]
 mod accessibility;
@@ -100,6 +101,7 @@ pub enum UiSystem {
 /// A multiplier to fixed-sized ui values.
 /// **Note:** This will only affect fixed ui values like [`Val::Px`]
 #[derive(Debug, Reflect, Resource, Deref, DerefMut)]
+#[reflect(Resource, Debug, Default)]
 pub struct UiScale(pub f32);
 
 impl Default for UiScale {

@@ -3,17 +3,16 @@ use proc_macro2::Span;
 
 use crate::container_attributes::{ContainerAttributes, FromReflectAttrs, TypePathAttrs};
 use crate::field_attributes::FieldAttributes;
+use crate::result_sifter::ResultSifter;
+use crate::string_expr::StringExpr;
 use crate::type_path::parse_path_no_leading_colon;
-use crate::utility::{StringExpr, WhereClauseOptions};
+use crate::where_clause_options::WhereClauseOptions;
 use quote::{quote, ToTokens};
 use syn::token::Comma;
 
 use crate::remote::RemoteType;
 use crate::serialization::SerializationDataDef;
-use crate::{
-    utility, REFLECT_ATTRIBUTE_NAME, REFLECT_VALUE_ATTRIBUTE_NAME, TYPE_NAME_ATTRIBUTE_NAME,
-    TYPE_PATH_ATTRIBUTE_NAME,
-};
+use crate::{REFLECT_ATTRIBUTE_NAME, TYPE_NAME_ATTRIBUTE_NAME, TYPE_PATH_ATTRIBUTE_NAME};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
@@ -26,7 +25,7 @@ pub(crate) enum ReflectDerive<'a> {
     TupleStruct(ReflectStruct<'a>),
     UnitStruct(ReflectStruct<'a>),
     Enum(ReflectEnum<'a>),
-    Value(ReflectMeta<'a>),
+    Opaque(ReflectMeta<'a>),
 }
 
 /// Metadata present on all reflected types, including name, generics, and attributes.
@@ -133,15 +132,6 @@ pub(crate) enum EnumVariantFields<'a> {
     Unit,
 }
 
-/// The method in which the type should be reflected.
-#[derive(PartialEq, Eq)]
-enum ReflectMode {
-    /// Reflect the type normally, providing information about all fields/variants.
-    Normal,
-    /// Reflect the type as a value.
-    Value,
-}
-
 /// How the macro was invoked.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum ReflectImplSource {
@@ -190,8 +180,6 @@ impl<'a> ReflectDerive<'a> {
         provenance: ReflectProvenance,
     ) -> Result<Self, syn::Error> {
         let mut container_attributes = ContainerAttributes::default();
-        // Should indicate whether `#[reflect_value]` was used.
-        let mut reflect_mode = None;
         // Should indicate whether `#[type_path = "..."]` was used.
         let mut custom_path: Option<Path> = None;
         // Should indicate whether `#[type_name = "..."]` was used.
@@ -203,36 +191,7 @@ impl<'a> ReflectDerive<'a> {
         for attribute in &input.attrs {
             match &attribute.meta {
                 Meta::List(meta_list) if meta_list.path.is_ident(REFLECT_ATTRIBUTE_NAME) => {
-                    if !matches!(reflect_mode, None | Some(ReflectMode::Normal)) {
-                        return Err(syn::Error::new(
-                            meta_list.span(),
-                            format_args!("cannot use both `#[{REFLECT_ATTRIBUTE_NAME}]` and `#[{REFLECT_VALUE_ATTRIBUTE_NAME}]`"),
-                        ));
-                    }
-
-                    reflect_mode = Some(ReflectMode::Normal);
                     container_attributes.parse_meta_list(meta_list, provenance.trait_)?;
-                }
-                Meta::List(meta_list) if meta_list.path.is_ident(REFLECT_VALUE_ATTRIBUTE_NAME) => {
-                    if !matches!(reflect_mode, None | Some(ReflectMode::Value)) {
-                        return Err(syn::Error::new(
-                            meta_list.span(),
-                            format_args!("cannot use both `#[{REFLECT_ATTRIBUTE_NAME}]` and `#[{REFLECT_VALUE_ATTRIBUTE_NAME}]`"),
-                        ));
-                    }
-
-                    reflect_mode = Some(ReflectMode::Value);
-                    container_attributes.parse_meta_list(meta_list, provenance.trait_)?;
-                }
-                Meta::Path(path) if path.is_ident(REFLECT_VALUE_ATTRIBUTE_NAME) => {
-                    if !matches!(reflect_mode, None | Some(ReflectMode::Value)) {
-                        return Err(syn::Error::new(
-                            path.span(),
-                            format_args!("cannot use both `#[{REFLECT_ATTRIBUTE_NAME}]` and `#[{REFLECT_VALUE_ATTRIBUTE_NAME}]`"),
-                        ));
-                    }
-
-                    reflect_mode = Some(ReflectMode::Value);
                 }
                 Meta::NameValue(pair) if pair.path.is_ident(TYPE_PATH_ATTRIBUTE_NAME) => {
                     let syn::Expr::Lit(syn::ExprLit {
@@ -313,11 +272,8 @@ impl<'a> ReflectDerive<'a> {
         #[cfg(feature = "documentation")]
         let meta = meta.with_docs(doc);
 
-        // Use normal reflection if unspecified
-        let reflect_mode = reflect_mode.unwrap_or(ReflectMode::Normal);
-
-        if reflect_mode == ReflectMode::Value {
-            return Ok(Self::Value(meta));
+        if meta.attrs().is_opaque() {
+            return Ok(Self::Opaque(meta));
         }
 
         return match &input.data {
@@ -352,7 +308,7 @@ impl<'a> ReflectDerive<'a> {
     ///
     /// # Panics
     ///
-    /// Panics when called on [`ReflectDerive::Value`].
+    /// Panics when called on [`ReflectDerive::Opaque`].
     pub fn set_remote(&mut self, remote_ty: Option<RemoteType<'a>>) {
         match self {
             Self::Struct(data) | Self::TupleStruct(data) | Self::UnitStruct(data) => {
@@ -361,7 +317,7 @@ impl<'a> ReflectDerive<'a> {
             Self::Enum(data) => {
                 data.meta.remote_ty = remote_ty;
             }
-            Self::Value(meta) => {
+            Self::Opaque(meta) => {
                 meta.remote_ty = remote_ty;
             }
         }
@@ -374,7 +330,7 @@ impl<'a> ReflectDerive<'a> {
                 data.meta.remote_ty()
             }
             Self::Enum(data) => data.meta.remote_ty(),
-            Self::Value(meta) => meta.remote_ty(),
+            Self::Opaque(meta) => meta.remote_ty(),
         }
     }
 
@@ -383,7 +339,7 @@ impl<'a> ReflectDerive<'a> {
         match self {
             Self::Struct(data) | Self::TupleStruct(data) | Self::UnitStruct(data) => data.meta(),
             Self::Enum(data) => data.meta(),
-            Self::Value(meta) => meta,
+            Self::Opaque(meta) => meta,
         }
     }
 
@@ -393,13 +349,13 @@ impl<'a> ReflectDerive<'a> {
                 data.where_clause_options()
             }
             Self::Enum(data) => data.where_clause_options(),
-            Self::Value(meta) => WhereClauseOptions::new(meta),
+            Self::Opaque(meta) => WhereClauseOptions::new(meta),
         }
     }
 
     fn collect_struct_fields(fields: &'a Fields) -> Result<Vec<StructField<'a>>, syn::Error> {
         let mut active_index = 0;
-        let sifter: utility::ResultSifter<StructField<'a>> = fields
+        let sifter: ResultSifter<StructField<'a>> = fields
             .iter()
             .enumerate()
             .map(
@@ -423,10 +379,7 @@ impl<'a> ReflectDerive<'a> {
                     })
                 },
             )
-            .fold(
-                utility::ResultSifter::default(),
-                utility::ResultSifter::fold,
-            );
+            .fold(ResultSifter::default(), ResultSifter::fold);
 
         sifter.finish()
     }
@@ -434,7 +387,7 @@ impl<'a> ReflectDerive<'a> {
     fn collect_enum_variants(
         variants: &'a Punctuated<Variant, Comma>,
     ) -> Result<Vec<EnumVariant<'a>>, syn::Error> {
-        let sifter: utility::ResultSifter<EnumVariant<'a>> = variants
+        let sifter: ResultSifter<EnumVariant<'a>> = variants
             .iter()
             .map(|variant| -> Result<EnumVariant, syn::Error> {
                 let fields = Self::collect_struct_fields(&variant.fields)?;
@@ -452,10 +405,7 @@ impl<'a> ReflectDerive<'a> {
                     doc: crate::documentation::Documentation::from_attributes(&variant.attrs),
                 })
             })
-            .fold(
-                utility::ResultSifter::default(),
-                utility::ResultSifter::fold,
-            );
+            .fold(ResultSifter::default(), ResultSifter::fold);
 
         sifter.finish()
     }
@@ -467,7 +417,7 @@ impl<'a> ReflectMeta<'a> {
             attrs,
             type_path,
             remote_ty: None,
-            bevy_reflect_path: utility::get_bevy_reflect_path(),
+            bevy_reflect_path: crate::meta::get_bevy_reflect_path(),
             #[cfg(feature = "documentation")]
             docs: Default::default(),
         }

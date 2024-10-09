@@ -1,3 +1,7 @@
+use crate::{
+    fullscreen_vertex_shader::fullscreen_shader_vertex_state,
+    oit::OrderIndependentTransparencySettings,
+};
 use bevy_app::Plugin;
 use bevy_asset::{load_internal_asset, Handle};
 use bevy_derive::Deref;
@@ -9,20 +13,16 @@ use bevy_render::{
     render_resource::{
         binding_types::{storage_buffer_sized, texture_depth_2d, uniform_buffer},
         BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BlendComponent,
-        BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState,
-        MultisampleState, PipelineCache, PrimitiveState, RenderPipelineDescriptor, Shader,
-        ShaderStages, TextureFormat,
+        BlendState, CachedRenderPipelineId, ColorTargetState, ColorWrites, DownlevelFlags,
+        FragmentState, MultisampleState, PipelineCache, PrimitiveState, RenderPipelineDescriptor,
+        Shader, ShaderDefVal, ShaderStages, TextureFormat,
     },
-    renderer::RenderDevice,
+    renderer::{RenderAdapter, RenderDevice},
     texture::BevyDefault,
     view::{ExtractedView, ViewTarget, ViewUniform, ViewUniforms},
     Render, RenderApp, RenderSet,
 };
-
-use crate::{
-    fullscreen_vertex_shader::fullscreen_shader_vertex_state,
-    oit::OrderIndependentTransparencySettings,
-};
+use bevy_utils::tracing::warn;
 
 use super::OitBuffers;
 
@@ -42,18 +42,6 @@ impl Plugin for OitResolvePlugin {
             "oit_resolve.wgsl",
             Shader::from_wgsl
         );
-
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-
-        render_app.add_systems(
-            Render,
-            (
-                queue_oit_resolve_pipeline.in_set(RenderSet::Queue),
-                prepare_oit_resolve_bind_group.in_set(RenderSet::PrepareBindGroups),
-            ),
-        );
     }
 
     fn finish(&self, app: &mut bevy_app::App) {
@@ -61,7 +49,26 @@ impl Plugin for OitResolvePlugin {
             return;
         };
 
-        render_app.init_resource::<OitResolvePipeline>();
+        if !render_app
+            .world()
+            .resource::<RenderAdapter>()
+            .get_downlevel_capabilities()
+            .flags
+            .contains(DownlevelFlags::FRAGMENT_WRITABLE_STORAGE)
+        {
+            warn!("OrderIndependentTransparencyPlugin not loaded. GPU lacks support: DownlevelFlags::FRAGMENT_WRITABLE_STORAGE.");
+            return;
+        }
+
+        render_app
+            .add_systems(
+                Render,
+                (
+                    queue_oit_resolve_pipeline.in_set(RenderSet::Queue),
+                    prepare_oit_resolve_bind_group.in_set(RenderSet::PrepareBindGroups),
+                ),
+            )
+            .init_resource::<OitResolvePipeline>();
     }
 }
 
@@ -114,6 +121,7 @@ pub struct OitResolvePipelineId(pub CachedRenderPipelineId);
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct OitResolvePipelineKey {
     hdr: bool,
+    layer_count: u8,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -121,15 +129,25 @@ pub fn queue_oit_resolve_pipeline(
     mut commands: Commands,
     pipeline_cache: Res<PipelineCache>,
     resolve_pipeline: Res<OitResolvePipeline>,
-    views: Query<(Entity, &ExtractedView), With<OrderIndependentTransparencySettings>>,
+    views: Query<
+        (
+            Entity,
+            &ExtractedView,
+            &OrderIndependentTransparencySettings,
+        ),
+        With<OrderIndependentTransparencySettings>,
+    >,
     // Store the key with the id to make the clean up logic easier.
     // This also means it will always replace the entry if the key changes so nothing to clean up.
     mut cached_pipeline_id: Local<EntityHashMap<(OitResolvePipelineKey, CachedRenderPipelineId)>>,
 ) {
     let mut current_view_entities = EntityHashSet::default();
-    for (e, view) in &views {
+    for (e, view, oit_settings) in &views {
         current_view_entities.insert(e);
-        let key = OitResolvePipelineKey { hdr: view.hdr };
+        let key = OitResolvePipelineKey {
+            hdr: view.hdr,
+            layer_count: oit_settings.layer_count,
+        };
 
         if let Some((cached_key, id)) = cached_pipeline_id.get(&e) {
             if *cached_key == key {
@@ -172,7 +190,10 @@ fn specialize_oit_resolve_pipeline(
         fragment: Some(FragmentState {
             entry_point: "fragment".into(),
             shader: OIT_RESOLVE_SHADER_HANDLE,
-            shader_defs: vec![],
+            shader_defs: vec![ShaderDefVal::UInt(
+                "LAYER_COUNT".into(),
+                key.layer_count as u32,
+            )],
             targets: vec![Some(ColorTargetState {
                 format,
                 blend: Some(BlendState {

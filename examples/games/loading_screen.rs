@@ -77,7 +77,7 @@ fn setup(mut commands: Commands) {
     commands.insert_resource(level_data);
 
     // Spawns the UI that will show the user prompts.
-    let text_style = TextStyle {
+    let text_style = TextFont {
         font_size: 42.0,
         ..default()
     };
@@ -239,7 +239,7 @@ struct LoadingScreen;
 
 // Spawns the necessary components for the loading screen.
 fn load_loading_screen(mut commands: Commands) {
-    let text_style = TextStyle {
+    let text_style = TextFont {
         font_size: 67.0,
         ..default()
     };
@@ -275,7 +275,7 @@ fn load_loading_screen(mut commands: Commands) {
 
 // Determines when to show the loading screen
 fn display_loading_screen(
-    mut loading_screen: Query<&mut Visibility, (With<LoadingScreen>, With<Node>)>,
+    mut loading_screen: Single<&mut Visibility, (With<LoadingScreen>, With<Node>)>,
     loading_state: Res<LoadingState>,
 ) {
     let visibility = match loading_state.as_ref() {
@@ -283,7 +283,7 @@ fn display_loading_screen(
         LoadingState::LevelReady => Visibility::Hidden,
     };
 
-    *loading_screen.single_mut() = visibility;
+    **loading_screen = visibility;
 }
 
 mod pipelines_ready {

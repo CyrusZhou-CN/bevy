@@ -33,8 +33,6 @@ use core::{
 use disqualified::ShortName;
 use thiserror::Error;
 
-pub use bevy_ecs_macros::require;
-
 /// A data type that can be used to store data for an [entity].
 ///
 /// `Component` is a [derivable trait]: this means that a data type can implement it by applying a `#[derive(Component)]` attribute to it.
@@ -318,6 +316,25 @@ pub use bevy_ecs_macros::require;
 /// // You can also destructure items directly in the signature
 /// fn my_on_insert_hook(world: DeferredWorld, HookContext { caller, .. }: HookContext) {
 ///     // ...
+/// }
+/// ```
+///
+/// This also supports function calls that yield closures
+///
+/// ```
+/// # use bevy_ecs::component::{Component, HookContext};
+/// # use bevy_ecs::world::DeferredWorld;
+/// #
+/// #[derive(Component)]
+/// #[component(on_add = my_msg_hook("hello"))]
+/// #[component(on_despawn = my_msg_hook("yoink"))]
+/// struct ComponentA;
+///
+/// // a hook closure generating function
+/// fn my_msg_hook(message: &'static str) -> impl Fn(DeferredWorld, HookContext) {
+///     move |_world, _ctx| {
+///         println!("{message}");
+///     }
 /// }
 /// ```
 ///

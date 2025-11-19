@@ -1,7 +1,9 @@
+use bevy_utils::prelude::DebugName;
+
 use crate::{
     batching::BatchingStrategy,
-    component::Tick,
-    entity::{Entity, EntityDoesNotExistError, EntityEquivalent, EntitySet, UniqueEntityArray},
+    change_detection::Tick,
+    entity::{Entity, EntityEquivalent, EntitySet, UniqueEntityArray},
     query::{
         DebugCheckedUnwrap, NopWorldQuery, QueryCombinationIter, QueryData, QueryEntityError,
         QueryFilter, QueryIter, QueryManyIter, QueryManyUniqueIter, QueryParIter, QueryParManyIter,
@@ -547,6 +549,9 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     }
 
     /// Returns another `Query` from this does not return any data, which can be faster.
+    ///
+    /// The resulting query will ignore any non-archetypal filters in `D`,
+    /// so this is only equivalent if `D::IS_ARCHETYPAL` is `true`.
     fn as_nop(&self) -> Query<'_, 's, NopWorldQuery<D>, F> {
         let new_state = self.state.as_nop();
         // SAFETY:
@@ -1185,7 +1190,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     /// [`par_iter_mut`]: Self::par_iter_mut
     /// [`World`]: crate::world::World
     #[inline]
-    pub fn par_iter(&self) -> QueryParIter<'_, '_, D::ReadOnly, F> {
+    pub fn par_iter(&self) -> QueryParIter<'_, 's, D::ReadOnly, F> {
         self.as_readonly().par_iter_inner()
     }
 
@@ -1220,7 +1225,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     /// [`par_iter`]: Self::par_iter
     /// [`World`]: crate::world::World
     #[inline]
-    pub fn par_iter_mut(&mut self) -> QueryParIter<'_, '_, D, F> {
+    pub fn par_iter_mut(&mut self) -> QueryParIter<'_, 's, D, F> {
         self.reborrow().par_iter_inner()
     }
 
@@ -1280,7 +1285,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn par_iter_many<EntityList: IntoIterator<Item: EntityEquivalent>>(
         &self,
         entities: EntityList,
-    ) -> QueryParManyIter<'_, '_, D::ReadOnly, F, EntityList::Item> {
+    ) -> QueryParManyIter<'_, 's, D::ReadOnly, F, EntityList::Item> {
         QueryParManyIter {
             world: self.world,
             state: self.state.as_readonly(),
@@ -1309,7 +1314,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn par_iter_many_unique<EntityList: EntitySet<Item: Sync>>(
         &self,
         entities: EntityList,
-    ) -> QueryParManyUniqueIter<'_, '_, D::ReadOnly, F, EntityList::Item> {
+    ) -> QueryParManyUniqueIter<'_, 's, D::ReadOnly, F, EntityList::Item> {
         QueryParManyUniqueIter {
             world: self.world,
             state: self.state.as_readonly(),
@@ -1338,7 +1343,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn par_iter_many_unique_mut<EntityList: EntitySet<Item: Sync>>(
         &mut self,
         entities: EntityList,
-    ) -> QueryParManyUniqueIter<'_, '_, D, F, EntityList::Item> {
+    ) -> QueryParManyUniqueIter<'_, 's, D, F, EntityList::Item> {
         QueryParManyUniqueIter {
             world: self.world,
             state: self.state,
@@ -1383,7 +1388,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`get_mut`](Self::get_mut) to get a mutable query item.
     #[inline]
-    pub fn get(&self, entity: Entity) -> Result<ROQueryItem<'_, D>, QueryEntityError> {
+    pub fn get(&self, entity: Entity) -> Result<ROQueryItem<'_, 's, D>, QueryEntityError> {
         self.as_readonly().get_inner(entity)
     }
 
@@ -1419,7 +1424,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// assert_eq!(
     ///     match query.get_many([wrong_entity]).unwrap_err() {
-    ///         QueryEntityError::EntityDoesNotExist(error) => error.entity,
+    ///         QueryEntityError::NotSpawned(error) => error.entity(),
     ///         _ => panic!(),
     ///     },
     ///     wrong_entity
@@ -1434,7 +1439,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many<const N: usize>(
         &self,
         entities: [Entity; N],
-    ) -> Result<[ROQueryItem<'_, D>; N], QueryEntityError> {
+    ) -> Result<[ROQueryItem<'_, 's, D>; N], QueryEntityError> {
         // Note that we call a separate `*_inner` method from `get_many_mut`
         // because we don't need to check for duplicates.
         self.as_readonly().get_many_inner(entities)
@@ -1470,7 +1475,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// assert_eq!(
     ///     match query.get_many_unique(UniqueEntityArray::from([wrong_entity])).unwrap_err() {
-    ///         QueryEntityError::EntityDoesNotExist(error) => error.entity,
+    ///         QueryEntityError::NotSpawned(error) => error.entity(),
     ///         _ => panic!(),
     ///     },
     ///     wrong_entity
@@ -1485,7 +1490,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many_unique<const N: usize>(
         &self,
         entities: UniqueEntityArray<N>,
-    ) -> Result<[ROQueryItem<'_, D>; N], QueryEntityError> {
+    ) -> Result<[ROQueryItem<'_, 's, D>; N], QueryEntityError> {
         self.as_readonly().get_many_unique_inner(entities)
     }
 
@@ -1519,7 +1524,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`get`](Self::get) to get a read-only query item.
     #[inline]
-    pub fn get_mut(&mut self, entity: Entity) -> Result<D::Item<'_>, QueryEntityError> {
+    pub fn get_mut(&mut self, entity: Entity) -> Result<D::Item<'_, 's>, QueryEntityError> {
         self.reborrow().get_inner(entity)
     }
 
@@ -1534,15 +1539,11 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`get_mut`](Self::get_mut) to get the item using a mutable borrow of the [`Query`].
     #[inline]
-    pub fn get_inner(self, entity: Entity) -> Result<D::Item<'w>, QueryEntityError> {
+    pub fn get_inner(self, entity: Entity) -> Result<D::Item<'w, 's>, QueryEntityError> {
         // SAFETY: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
-            let location = self
-                .world
-                .entities()
-                .get(entity)
-                .ok_or(EntityDoesNotExistError::new(entity, self.world.entities()))?;
+            let location = self.world.entities().get_spawned(entity)?;
             if !self
                 .state
                 .matched_archetypes
@@ -1580,8 +1581,18 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
             D::set_archetype(&mut fetch, &self.state.fetch_state, archetype, table);
             F::set_archetype(&mut filter, &self.state.filter_state, archetype, table);
 
-            if F::filter_fetch(&mut filter, entity, location.table_row) {
-                Ok(D::fetch(&mut fetch, entity, location.table_row))
+            if F::filter_fetch(
+                &self.state.filter_state,
+                &mut filter,
+                entity,
+                location.table_row,
+            ) && let Some(item) = D::fetch(
+                &self.state.fetch_state,
+                &mut fetch,
+                entity,
+                location.table_row,
+            ) {
+                Ok(item)
             } else {
                 Err(QueryEntityError::QueryDoesNotMatch(
                     entity,
@@ -1633,7 +1644,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///         .get_many_mut([wrong_entity])
     ///         .unwrap_err()
     ///     {
-    ///         QueryEntityError::EntityDoesNotExist(error) => error.entity,
+    ///         QueryEntityError::NotSpawned(error) => error.entity(),
     ///         _ => panic!(),
     ///     },
     ///     wrong_entity
@@ -1662,7 +1673,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many_mut<const N: usize>(
         &mut self,
         entities: [Entity; N],
-    ) -> Result<[D::Item<'_>; N], QueryEntityError> {
+    ) -> Result<[D::Item<'_, 's>; N], QueryEntityError> {
         self.reborrow().get_many_mut_inner(entities)
     }
 
@@ -1707,7 +1718,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///         .get_many_unique_mut(UniqueEntityArray::from([wrong_entity]))
     ///         .unwrap_err()
     ///     {
-    ///         QueryEntityError::EntityDoesNotExist(error) => error.entity,
+    ///         QueryEntityError::NotSpawned(error) => error.entity(),
     ///         _ => panic!(),
     ///     },
     ///     wrong_entity
@@ -1730,7 +1741,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many_unique_mut<const N: usize>(
         &mut self,
         entities: UniqueEntityArray<N>,
-    ) -> Result<[D::Item<'_>; N], QueryEntityError> {
+    ) -> Result<[D::Item<'_, 's>; N], QueryEntityError> {
         self.reborrow().get_many_unique_inner(entities)
     }
 
@@ -1749,7 +1760,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many_mut_inner<const N: usize>(
         self,
         entities: [Entity; N],
-    ) -> Result<[D::Item<'w>; N], QueryEntityError> {
+    ) -> Result<[D::Item<'w, 's>; N], QueryEntityError> {
         // Verify that all entities are unique
         for i in 0..N {
             for j in 0..i {
@@ -1777,7 +1788,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many_inner<const N: usize>(
         self,
         entities: [Entity; N],
-    ) -> Result<[D::Item<'w>; N], QueryEntityError>
+    ) -> Result<[D::Item<'w, 's>; N], QueryEntityError>
     where
         D: ReadOnlyQueryData,
     {
@@ -1799,7 +1810,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     pub fn get_many_unique_inner<const N: usize>(
         self,
         entities: UniqueEntityArray<N>,
-    ) -> Result<[D::Item<'w>; N], QueryEntityError> {
+    ) -> Result<[D::Item<'w, 's>; N], QueryEntityError> {
         // SAFETY: All entities are unique, so the results don't alias.
         unsafe { self.get_many_impl(entities.into_inner()) }
     }
@@ -1814,7 +1825,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     unsafe fn get_many_impl<const N: usize>(
         self,
         entities: [Entity; N],
-    ) -> Result<[D::Item<'w>; N], QueryEntityError> {
+    ) -> Result<[D::Item<'w, 's>; N], QueryEntityError> {
         let mut values = [(); N].map(|_| MaybeUninit::uninit());
 
         for (value, entity) in core::iter::zip(&mut values, entities) {
@@ -1842,7 +1853,10 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`get_mut`](Self::get_mut) for the safe version.
     #[inline]
-    pub unsafe fn get_unchecked(&self, entity: Entity) -> Result<D::Item<'_>, QueryEntityError> {
+    pub unsafe fn get_unchecked(
+        &self,
+        entity: Entity,
+    ) -> Result<D::Item<'_, 's>, QueryEntityError> {
         // SAFETY: The caller promises that this will not result in multiple mutable references.
         unsafe { self.reborrow_unsafe() }.get_inner(entity)
     }
@@ -1878,7 +1892,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`single_mut`](Self::single_mut) to get the mutable query item.
     #[inline]
-    pub fn single(&self) -> Result<ROQueryItem<'_, D>, QuerySingleError> {
+    pub fn single(&self) -> Result<ROQueryItem<'_, 's, D>, QuerySingleError> {
         self.as_readonly().single_inner()
     }
 
@@ -1907,7 +1921,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`single`](Self::single) to get the read-only query item.
     #[inline]
-    pub fn single_mut(&mut self) -> Result<D::Item<'_>, QuerySingleError> {
+    pub fn single_mut(&mut self) -> Result<D::Item<'_, 's>, QuerySingleError> {
         self.reborrow().single_inner()
     }
 
@@ -1937,17 +1951,16 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     ///
     /// - [`single`](Self::single) to get the read-only query item.
     /// - [`single_mut`](Self::single_mut) to get the mutable query item.
-    /// - [`single_inner`](Self::single_inner) for the panicking version.
     #[inline]
-    pub fn single_inner(self) -> Result<D::Item<'w>, QuerySingleError> {
+    pub fn single_inner(self) -> Result<D::Item<'w, 's>, QuerySingleError> {
         let mut query = self.into_iter();
         let first = query.next();
         let extra = query.next().is_some();
 
         match (first, extra) {
             (Some(r), false) => Ok(r),
-            (None, _) => Err(QuerySingleError::NoEntities(core::any::type_name::<Self>())),
-            (Some(_), _) => Err(QuerySingleError::MultipleEntities(core::any::type_name::<
+            (None, _) => Err(QuerySingleError::NoEntities(DebugName::type_name::<Self>())),
+            (Some(_), _) => Err(QuerySingleError::MultipleEntities(DebugName::type_name::<
                 Self,
             >())),
         }
@@ -1984,7 +1997,13 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     /// [`Spawned`]: crate::query::Spawned
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.as_nop().iter().next().is_none()
+        // If the query data matches every entity, then `as_nop()` can safely
+        // skip the cost of initializing the fetch for data that won't be used.
+        if D::IS_ARCHETYPAL {
+            self.as_nop().iter().next().is_none()
+        } else {
+            self.iter().next().is_none()
+        }
     }
 
     /// Returns `true` if the given [`Entity`] matches the query.
@@ -2013,7 +2032,50 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
     /// ```
     #[inline]
     pub fn contains(&self, entity: Entity) -> bool {
-        self.as_nop().get(entity).is_ok()
+        // If the query data matches every entity, then `as_nop()` can safely
+        // skip the cost of initializing the fetch for data that won't be used.
+        if D::IS_ARCHETYPAL {
+            self.as_nop().get(entity).is_ok()
+        } else {
+            self.get(entity).is_ok()
+        }
+    }
+
+    /// Counts the number of entities that match the query.
+    ///
+    /// This is equivalent to `self.iter().count()` but may be more efficient in some cases.
+    ///
+    /// If [`D::IS_ARCHETYPAL`](QueryData::IS_ARCHETYPAL) && [`F::IS_ARCHETYPAL`](QueryFilter::IS_ARCHETYPAL) is `true`,
+    /// this will do work proportional to the number of matched archetypes or tables, but will not iterate each entity.
+    /// If it is `false`, it will have to do work for each entity.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use bevy_ecs::prelude::*;
+    /// #
+    /// # #[derive(Component)]
+    /// # struct InRange;
+    /// #
+    /// fn targeting_system(in_range_query: Query<&InRange>) {
+    ///     let count = in_range_query.count();
+    ///     println!("{count} targets in range!");
+    /// }
+    /// # bevy_ecs::system::assert_is_system(targeting_system);
+    /// ```
+    pub fn count(&self) -> usize {
+        // If the query data matches every entity, then `as_nop()` can safely
+        // skip the cost of initializing the fetch for data that won't be used.
+        if !D::IS_ARCHETYPAL {
+            self.into_iter().count()
+        } else if !F::IS_ARCHETYPAL {
+            // If we have non-archetypal filters, we have to check each entity.
+            self.as_nop().into_iter().count()
+        } else {
+            // For archetypal queries, the `size_hint()` is exact,
+            // and we can get the count from the archetype and table counts.
+            self.as_nop().into_iter().size_hint().0
+        }
     }
 
     /// Returns a [`QueryLens`] that can be used to construct a new [`Query`] giving more
@@ -2451,7 +2513,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> Query<'w, 's, D, F> {
 }
 
 impl<'w, 's, D: QueryData, F: QueryFilter> IntoIterator for Query<'w, 's, D, F> {
-    type Item = D::Item<'w>;
+    type Item = D::Item<'w, 's>;
     type IntoIter = QueryIter<'w, 's, D, F>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -2464,7 +2526,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> IntoIterator for Query<'w, 's, D, F> 
 }
 
 impl<'w, 's, D: QueryData, F: QueryFilter> IntoIterator for &'w Query<'_, 's, D, F> {
-    type Item = ROQueryItem<'w, D>;
+    type Item = ROQueryItem<'w, 's, D>;
     type IntoIter = QueryIter<'w, 's, D::ReadOnly, F>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -2473,7 +2535,7 @@ impl<'w, 's, D: QueryData, F: QueryFilter> IntoIterator for &'w Query<'_, 's, D,
 }
 
 impl<'w, 's, D: QueryData, F: QueryFilter> IntoIterator for &'w mut Query<'_, 's, D, F> {
-    type Item = D::Item<'w>;
+    type Item = D::Item<'w, 's>;
     type IntoIter = QueryIter<'w, 's, D, F>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -2573,28 +2635,43 @@ impl<'w, 'q, Q: QueryData, F: QueryFilter> From<&'q mut Query<'w, '_, Q, F>>
 /// See [`Query`] for more details.
 ///
 /// [System parameter]: crate::system::SystemParam
-pub struct Single<'w, D: QueryData, F: QueryFilter = ()> {
-    pub(crate) item: D::Item<'w>,
+///
+/// # Example
+/// ```
+/// # use bevy_ecs::prelude::*;
+/// #[derive(Component)]
+/// struct Boss {
+///    health: f32
+/// };
+///
+/// fn hurt_boss(mut boss: Single<&mut Boss>) {
+///    boss.health -= 4.0;
+/// }
+/// ```
+/// Note that because [`Single`] implements [`Deref`] and [`DerefMut`], methods and fields like `health` can be accessed directly.
+/// You can also access the underlying data manually, by calling `.deref`/`.deref_mut`, or by using the `*` operator.
+pub struct Single<'w, 's, D: QueryData, F: QueryFilter = ()> {
+    pub(crate) item: D::Item<'w, 's>,
     pub(crate) _filter: PhantomData<F>,
 }
 
-impl<'w, D: QueryData, F: QueryFilter> Deref for Single<'w, D, F> {
-    type Target = D::Item<'w>;
+impl<'w, 's, D: QueryData, F: QueryFilter> Deref for Single<'w, 's, D, F> {
+    type Target = D::Item<'w, 's>;
 
     fn deref(&self) -> &Self::Target {
         &self.item
     }
 }
 
-impl<'w, D: QueryData, F: QueryFilter> DerefMut for Single<'w, D, F> {
+impl<'w, 's, D: QueryData, F: QueryFilter> DerefMut for Single<'w, 's, D, F> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.item
     }
 }
 
-impl<'w, D: QueryData, F: QueryFilter> Single<'w, D, F> {
+impl<'w, 's, D: QueryData, F: QueryFilter> Single<'w, 's, D, F> {
     /// Returns the inner item with ownership.
-    pub fn into_inner(self) -> D::Item<'w> {
+    pub fn into_inner(self) -> D::Item<'w, 's> {
         self.item
     }
 }

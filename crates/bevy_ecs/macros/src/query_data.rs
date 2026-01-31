@@ -229,7 +229,7 @@ pub fn derive_query_data_impl(input: TokenStream) -> TokenStream {
     let data_impl = {
         let read_only_data_impl = if attributes.is_mutable {
             quote! {
-                /// SAFETY: we assert fields are readonly below
+                // SAFETY: we assert fields are readonly below
                 unsafe impl #user_impl_generics #path::query::QueryData
                 for #read_only_struct_name #user_ty_generics #user_where_clauses {
                     const IS_READ_ONLY: bool = true;
@@ -267,6 +267,12 @@ pub fn derive_query_data_impl(input: TokenStream) -> TokenStream {
                             #(#field_members: <#read_only_field_types>::fetch(&_state.#field_aliases, &mut _fetch.#field_aliases, _entity, _table_row)?,)*
                         })
                     }
+
+                    fn iter_access(
+                        _state: &Self::State,
+                    ) -> impl core::iter::Iterator<Item = #path::query::EcsAccessType<'_>> {
+                        core::iter::empty() #(.chain(<#field_types>::iter_access(&_state.#field_aliases)))*
+                    }
                 }
 
                 impl #user_impl_generics #path::query::ReleaseStateQueryData
@@ -294,7 +300,7 @@ pub fn derive_query_data_impl(input: TokenStream) -> TokenStream {
         let is_read_only = !attributes.is_mutable;
 
         quote! {
-            /// SAFETY: we assert fields are readonly below
+            // SAFETY: we assert fields are readonly below
             unsafe impl #user_impl_generics #path::query::QueryData
             for #struct_name #user_ty_generics #user_where_clauses {
                 const IS_READ_ONLY: bool = #is_read_only;
@@ -332,6 +338,12 @@ pub fn derive_query_data_impl(input: TokenStream) -> TokenStream {
                         #(#field_members: <#field_types>::fetch(&_state.#field_aliases, &mut _fetch.#field_aliases, _entity, _table_row)?,)*
                     })
                 }
+
+                fn iter_access(
+                    _state: &Self::State,
+                ) -> impl core::iter::Iterator<Item = #path::query::EcsAccessType<'_>> {
+                    core::iter::empty() #(.chain(<#field_types>::iter_access(&_state.#field_aliases)))*
+                }
             }
 
             impl #user_impl_generics #path::query::ReleaseStateQueryData
@@ -357,7 +369,7 @@ pub fn derive_query_data_impl(input: TokenStream) -> TokenStream {
     };
 
     let read_only_data_impl = quote! {
-        /// SAFETY: we assert fields are readonly below
+        // SAFETY: we assert fields are readonly below
         unsafe impl #user_impl_generics #path::query::ReadOnlyQueryData
         for #read_only_struct_name #user_ty_generics #user_where_clauses {}
     };

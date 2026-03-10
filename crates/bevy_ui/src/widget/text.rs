@@ -104,9 +104,8 @@ impl Default for TextNodeFlags {
     LineHeight,
     TextNodeFlags,
     ContentSize,
-    // Disable hinting.
-    // UI text is normally pixel-aligned, but with hinting enabled sometimes the text bounds are miscalculated slightly.
-    FontHinting::Disabled
+    // Hinting is enabled by default as UI text is normally pixel.
+    FontHinting::Enabled
 )]
 pub struct Text(pub String);
 
@@ -242,13 +241,13 @@ pub fn measure_text_system(
     mut text_query: Query<
         (
             Entity,
+            Ref<Text>,
             Ref<TextLayout>,
             &mut ContentSize,
             &mut TextNodeFlags,
             &mut ComputedTextBlock,
             Ref<ComputedUiRenderTargetInfo>,
             &ComputedNode,
-            Ref<FontHinting>,
         ),
         With<Node>,
     >,
@@ -260,13 +259,13 @@ pub fn measure_text_system(
 ) {
     for (
         entity,
+        text,
         block,
         mut content_size,
         mut text_flags,
         mut computed,
         computed_target,
         computed_node,
-        hinting,
     ) in &mut text_query
     {
         // Note: the ComputedTextBlock::needs_rerender bool is cleared in create_text_measure().
@@ -274,9 +273,9 @@ pub fn measure_text_system(
         if !(1e-5
             < (computed_target.scale_factor() - computed_node.inverse_scale_factor.recip()).abs()
             || computed.needs_rerender(computed_target.is_changed(), rem_size.is_changed())
+            || text.is_changed()
             || text_flags.needs_measure_fn
-            || content_size.is_added()
-            || hinting.is_changed())
+            || content_size.is_added())
         {
             continue;
         }
@@ -290,7 +289,6 @@ pub fn measure_text_system(
             computed.as_mut(),
             &mut font_system,
             &mut layout_cx,
-            *hinting,
             computed_target.logical_size(),
             rem_size.0,
         ) {
@@ -336,7 +334,6 @@ pub fn measure_text_system(
 /// It does not modify or observe existing ones. The exception is when adding new glyphs to a [`bevy_text::FontAtlas`].
 pub fn text_system(
     mut textures: ResMut<Assets<Image>>,
-    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut font_atlas_set: ResMut<FontAtlasSet>,
     mut text_pipeline: ResMut<TextPipeline>,
     mut text_query: Query<(
@@ -345,14 +342,14 @@ pub fn text_system(
         &mut TextLayoutInfo,
         &mut TextNodeFlags,
         &mut ComputedTextBlock,
-        &FontHinting,
+        Ref<FontHinting>,
     )>,
     mut scale_cx: ResMut<ScaleCx>,
 ) {
     for (node, block, mut text_layout_info, mut text_flags, mut computed, hinting) in
         &mut text_query
     {
-        if node.is_changed() || text_flags.needs_recompute {
+        if node.is_changed() || text_flags.needs_recompute || hinting.is_changed() {
             // Skip the text node if it is waiting for a new measure func
             if text_flags.needs_measure_fn {
                 continue;
@@ -369,7 +366,6 @@ pub fn text_system(
             match text_pipeline.update_text_layout_info(
                 &mut text_layout_info,
                 &mut font_atlas_set,
-                &mut texture_atlases,
                 &mut textures,
                 &mut computed,
                 &mut scale_cx,

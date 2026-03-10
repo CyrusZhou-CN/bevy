@@ -62,7 +62,7 @@ impl Plugin for TemporalAntiAliasPlugin {
             .add_systems(
                 Render,
                 (
-                    prepare_taa_jitter.in_set(RenderSystems::ManageViews),
+                    prepare_taa_jitter.in_set(RenderSystems::PrepareViews),
                     prepare_taa_pipelines.in_set(RenderSystems::Prepare),
                     prepare_taa_history_textures.in_set(RenderSystems::PrepareResources),
                 ),
@@ -71,7 +71,7 @@ impl Plugin for TemporalAntiAliasPlugin {
         render_app.add_systems(
             Core3d,
             temporal_anti_alias
-                .after(motion_blur)
+                .before(motion_blur)
                 .before(bloom)
                 .in_set(Core3dSystems::PostProcess),
         );

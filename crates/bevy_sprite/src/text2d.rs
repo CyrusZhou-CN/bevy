@@ -173,11 +173,11 @@ pub fn update_text2d_layout(
     mut textures: ResMut<Assets<Image>>,
     fonts: Res<Assets<Font>>,
     camera_query: Query<(&Camera, &VisibleEntities, Option<&RenderLayers>)>,
-    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut font_atlas_set: ResMut<FontAtlasSet>,
     mut text_pipeline: ResMut<TextPipeline>,
     mut text_query: Query<(
         Entity,
+        Ref<Text2d>,
         Option<&RenderLayers>,
         Ref<TextLayout>,
         Ref<TextBounds>,
@@ -217,8 +217,16 @@ pub fn update_text2d_layout(
     let mut previous_scale_factor = 0.;
     let mut previous_mask = &RenderLayers::none();
 
-    for (entity, maybe_entity_mask, block, bounds, mut text_layout_info, mut computed, hinting) in
-        &mut text_query
+    for (
+        entity,
+        text2d,
+        maybe_entity_mask,
+        block,
+        bounds,
+        mut text_layout_info,
+        mut computed,
+        hinting,
+    ) in &mut text_query
     {
         let entity_mask = maybe_entity_mask.unwrap_or_default();
 
@@ -240,12 +248,12 @@ pub fn update_text2d_layout(
         };
 
         let text_changed = scale_factor != text_layout_info.scale_factor
+            || text2d.is_changed()
             || block.is_changed()
-            || hinting.is_changed()
             || computed.needs_rerender(viewport_size_changed, rem_size.is_changed())
             || (!reprocess_queue.is_empty() && reprocess_queue.remove(&entity));
 
-        if !(text_changed || bounds.is_changed()) {
+        if !(text_changed || bounds.is_changed() || hinting.is_changed()) {
             continue;
         }
 
@@ -269,7 +277,6 @@ pub fn update_text2d_layout(
                 &mut computed,
                 &mut font_system,
                 &mut layout_cx,
-                *hinting,
                 logical_viewport_size,
                 rem_size.0,
             ) {
@@ -302,7 +309,6 @@ pub fn update_text2d_layout(
         match text_pipeline.update_text_layout_info(
             &mut text_layout_info,
             &mut font_atlas_set,
-            &mut texture_atlases,
             &mut textures,
             &mut computed,
             &mut scale_cx,
@@ -401,7 +407,7 @@ mod tests {
             .add_systems(
                 Update,
                 (
-                    detect_text_needs_rerender::<Text2d>,
+                    detect_text_needs_rerender,
                     update_text2d_layout,
                     calculate_bounds_text2d,
                 )

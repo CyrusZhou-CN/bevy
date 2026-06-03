@@ -1,19 +1,17 @@
 //! This example illustrates how to create a button that changes color and text based on its
 //! interaction state.
 
-use bevy::{color::palettes::basic::*, input_focus::InputFocus, prelude::*};
+use bevy::{
+    color::palettes::basic::*,
+    input_focus::{FocusCause, InputFocus},
+    prelude::*,
+};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         // `InputFocus` must be set for accessibility to recognize the button.
         .init_resource::<InputFocus>()
-        .add_systems(
-            Startup,
-            |requested: Res<bevy::a11y::AccessibilityRequested>| {
-                requested.set(true);
-            },
-        )
         .add_systems(Startup, setup)
         .add_systems(Update, button_system)
         .run();
@@ -45,7 +43,7 @@ fn button_system(
 
         match *interaction {
             Interaction::Pressed => {
-                input_focus.set(entity);
+                input_focus.set(entity, FocusCause::Pressed);
                 **text = "Press".to_string();
                 *color = PRESSED_BUTTON.into();
                 *border_color = BorderColor::all(RED);
@@ -54,7 +52,7 @@ fn button_system(
                 button.set_changed();
             }
             Interaction::Hovered => {
-                input_focus.set(entity);
+                input_focus.set(entity, FocusCause::Pressed);
                 **text = "Hover".to_string();
                 *color = HOVERED_BUTTON.into();
                 *border_color = BorderColor::all(Color::WHITE);
@@ -97,11 +95,6 @@ fn button(asset_server: &AssetServer) -> impl Bundle {
                 align_items: AlignItems::Center,
                 border_radius: BorderRadius::MAX,
                 ..default()
-            },
-            UiTransform {
-                translation: default(),
-                scale: 2. * Vec2::ONE,
-                rotation: Rot2::degrees(45.)
             },
             BorderColor::all(Color::WHITE),
             BackgroundColor(Color::BLACK),

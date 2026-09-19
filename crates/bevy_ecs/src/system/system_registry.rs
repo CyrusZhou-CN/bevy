@@ -23,12 +23,13 @@ use thiserror::Error;
 /// A small wrapper for [`BoxedSystem`] that also keeps track whether or not the system has been initialized.
 #[derive(Component)]
 #[require(SystemIdMarker = SystemIdMarker::typed_system_id_marker::<I, O>())]
-pub(crate) struct RegisteredSystem<I, O> {
+pub struct RegisteredSystem<I, O> {
     initialized: bool,
     system: Option<BoxedSystem<I, O>>,
 }
 
 impl<I, O> RegisteredSystem<I, O> {
+    /// Create an uninitialized [`RegisteredSystem`] component with the provided boxed system
     pub fn new(system: BoxedSystem<I, O>) -> Self {
         RegisteredSystem {
             initialized: false,
@@ -289,6 +290,18 @@ impl<I: SystemInput, O> core::hash::Hash for SystemId<I, O> {
 impl<I: SystemInput, O> core::fmt::Debug for SystemId<I, O> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("SystemId").field(&self.entity).finish()
+    }
+}
+
+impl<I: SystemInput, O> From<&SystemHandle<I, O>> for SystemId<I, O> {
+    fn from(handle: &SystemHandle<I, O>) -> Self {
+        Self::from_entity(handle.entity())
+    }
+}
+
+impl<I: SystemInput, O> From<SystemHandle<I, O>> for SystemId<I, O> {
+    fn from(handle: SystemHandle<I, O>) -> Self {
+        (&handle).into()
     }
 }
 
@@ -1419,5 +1432,20 @@ mod tests {
 
             assert_eq!(a, b);
         }
+    }
+
+    #[test]
+    fn run_system_with_owned_system_handle() {
+        fn increment(mut counter: ResMut<Counter>) {
+            counter.0 += 1;
+        }
+
+        let mut world = World::new();
+        world.insert_resource(Counter(0));
+
+        let handle = world.register_tracked_system(increment);
+        world.run_system(handle).expect("system runs successfully");
+
+        assert_eq!(*world.resource::<Counter>(), Counter(1));
     }
 }
